@@ -9,14 +9,14 @@
 class MCP2515Driver : public CanDriver
 {
 public:
-    static constexpr bool kSupportsISR = true;
+    static constexpr bool kSupportsISR = false;  // polling mode, no INT pin required
 
     explicit MCP2515Driver(uint8_t csPin) : mcp_(csPin) {}
 
     bool init() override
     {
         mcp_.reset();
-        MCP2515::ERROR e = mcp_.setBitrate(CAN_500KBPS, MCP_16MHZ);
+        MCP2515::ERROR e = mcp_.setBitrate(CAN_500KBPS, MCP_8MHZ);  // 8MHz crystal on module
         if (e != MCP2515::ERROR_OK)
             return false;
         mcp_.setNormalMode();

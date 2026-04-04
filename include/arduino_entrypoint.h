@@ -27,6 +27,9 @@
 
 void setup()
 {
+#if defined(BOARD_SETUP_HOOK)
+    BOARD_SETUP_HOOK();
+#endif
 #if defined(DRIVER_MCP2515)
     appSetup<MCP2515Driver>(std::make_unique<MCP2515Driver>(PIN_CAN_CS), "MCP25625 ready @ 500k");
 #elif defined(DRIVER_SAME51)
