@@ -16,6 +16,7 @@ public:
     bool init() override
     {
         mcp_.reset();
+        delay(10);  // allow MCP2515 to stabilize after reset
         MCP2515::ERROR e = mcp_.setBitrate(CAN_500KBPS, MCP_8MHZ);  // 8MHz crystal on module
         if (e != MCP2515::ERROR_OK)
             return false;

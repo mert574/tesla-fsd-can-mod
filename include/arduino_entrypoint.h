@@ -31,7 +31,15 @@ void setup()
     BOARD_SETUP_HOOK();
 #endif
 #if defined(DRIVER_MCP2515)
-    appSetup<MCP2515Driver>(std::make_unique<MCP2515Driver>(PIN_CAN_CS), "MCP25625 ready @ 500k");
+    {
+        auto drv = std::make_unique<MCP2515Driver>(PIN_CAN_CS);
+        if (drv->init()) {
+            blinkLED(3);
+        } else {
+            blinkLED(8, 50);
+        }
+        appSetup<MCP2515Driver>(std::move(drv), "MCP25625 ready @ 500k");
+    }
 #elif defined(DRIVER_SAME51)
     appSetup<SAME51Driver>(std::make_unique<SAME51Driver>(), "SAME51 CAN ready @ 500k");
 #elif defined(DRIVER_TWAI)

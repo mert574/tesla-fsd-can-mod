@@ -37,6 +37,15 @@
 #define PIN_CAN_INTERRUPT 10  // MCP2515 INT pin
 #define PIN_LED           8   // onboard blue LED (active LOW)
 
+inline void blinkLED(int times, int ms = 100) {
+    for (int i = 0; i < times; i++) {
+        digitalWrite(PIN_LED, LOW);
+        delay(ms);
+        digitalWrite(PIN_LED, HIGH);
+        delay(ms);
+    }
+}
+
 // Initialize SPI with ESP32-C3 Super Mini pins before driver setup
 #define BOARD_SETUP_HOOK() do { \
     pinMode(PIN_LED, OUTPUT); \
