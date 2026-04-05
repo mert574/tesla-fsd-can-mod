@@ -374,3 +374,39 @@ struct HW4Handler : public CarManagerBase
         }
     }
 };
+
+#if defined(SNIFFER)
+/**
+ * SnifferHandler — read-only mode for frame analysis
+ *
+ * Listens to specific frames of interest without modifying anything.
+ * Useful for dumping frame contents on new/blocked firmware versions.
+ *
+ * Target frames:
+ *   0x3FD (1021) — AP control signals
+ *   0x7FF (2047) — Car config
+ *   0x3C8  (968) — Country code
+ *   0x398  (920) — Alternate car config
+ *
+ * Enable with: #define SNIFFER in sketch_config.h
+ */
+struct SnifferHandler : public CarManagerBase
+{
+    const uint32_t *filterIds() const override
+    {
+        static constexpr uint32_t ids[] = {1021, 2047, 968, 920};
+        return ids;
+    }
+    uint8_t filterIdCount() const override { return 4; }
+
+    void handleMessage(CanFrame &frame, CanDriver &driver) override
+    {
+#ifndef NATIVE_BUILD
+        Serial.printf("CAN 0x%03X (%4d) DLC:%d  ", frame.id, frame.id, frame.dlc);
+        for (int i = 0; i < frame.dlc; i++)
+            Serial.printf("%02X ", frame.data[i]);
+        Serial.println();
+#endif
+    }
+};
+#endif

@@ -26,6 +26,7 @@
 // #define EMERGENCY_VEHICLE_DETECTION   // Enable emergency vehicle detection
 // #define BYPASS_TLSSC_REQUIREMENT      // Always enable FSD without requiring "Traffic Light and Stop Sign Control" toggle
 // #define NAG_KILLER                    // Suppress Autosteer "hands on wheel" nag (CAN 880 counter+1 echo, X179 pin 2/3)
+// #define SNIFFER                       // Read-only mode: log specific frames without modifying anything
 
 // ── ESP32-C3 Super Mini board info ───────────────────────────────
 // Board name: Nologo ESP32C3 Super Mini
