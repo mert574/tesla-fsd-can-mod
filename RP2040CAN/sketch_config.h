@@ -17,13 +17,13 @@
 // ── VEHICLE HARDWARE SELECTION ───────────────────────────────────
 // Uncomment ONE of the following lines to match your vehicle:
 // #define LEGACY  // HW3-retrofit
-#define HW3     // HW3
-// #define HW4     // HW4
+// #define HW3     // HW3 — use for HW4 hardware on firmware 2026.8.X (FSD V13)
+#define HW4     // HW4
 
 // ── BEHAVIOUR OPTIONS ────────────────────────────────────────────
 // Uncomment any of the following lines:
-// #define ISA_SPEED_CHIME_SUPPRESS      // Suppress ISA speed chime; speed limit sign will be empty while driving
-// #define EMERGENCY_VEHICLE_DETECTION   // Enable emergency vehicle detection
+#define ISA_SPEED_CHIME_SUPPRESS      // Suppress ISA speed chime; speed limit sign will be empty while driving
+#define EMERGENCY_VEHICLE_DETECTION   // Enable emergency vehicle detection
 // #define BYPASS_TLSSC_REQUIREMENT      // Always enable FSD without requiring "Traffic Light and Stop Sign Control" toggle
 // #define NAG_KILLER                    // Suppress Autosteer "hands on wheel" nag (CAN 880 counter+1 echo, X179 pin 2/3)
 // #define SNIFFER                       // Read-only mode: log specific frames without modifying anything
@@ -51,6 +51,7 @@ inline void blinkLED(int times, int ms = 100) {
 #define BOARD_SETUP_HOOK() do { \
     pinMode(PIN_LED, OUTPUT); \
     digitalWrite(PIN_LED, HIGH); \
+    delay(2000); \
     blinkLED(2); \
     SPI.begin(4, 3, 2, 1); \
 } while(0)

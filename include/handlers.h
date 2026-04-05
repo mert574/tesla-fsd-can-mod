@@ -96,6 +96,9 @@ struct LegacyHandler : public CarManagerBase
 
 struct HW3Handler : public CarManagerBase
 {
+    CanFrame lastGoodMux0 = {};  // last mux 0 frame with FSD=1
+    bool hasGoodMux0 = false;
+
     const uint32_t *filterIds() const override
     {
         static constexpr uint32_t ids[] = {1016, 1021};
@@ -132,11 +135,34 @@ struct HW3Handler : public CarManagerBase
                 return;
             auto index = readMuxID(frame);
             if (index == 0)
+            {
                 FSDEnabled = isFSDSelectedInUI(frame);
+
+                // check if this is an all-zero "clear" frame
+                bool isZeroFrame = true;
+                for (int i = 0; i < 8; i++)
+                    if (frame.data[i] != 0) { isZeroFrame = false; break; }
+
+                if (isZeroFrame && hasGoodMux0)
+                {
+                    // override the zero frame with the last good frame + FSD bits
+                    frame = lastGoodMux0;
+#ifndef NATIVE_BUILD
+                    Serial.println("[HW3] Zero frame suppressed, forwarding last good frame");
+#endif
+                }
+                else if (FSDEnabled)
+                {
+                    // store this as the last good frame
+                    lastGoodMux0 = frame;
+                    hasGoodMux0 = true;
+                }
+            }
             if (index == 0 && FSDEnabled)
             {
                 speedOffset = std::max(std::min(((uint8_t)((frame.data[3] >> 1) & 0x3F) - 30) * 5, 100), 0);
-                setBit(frame, 46, true);
+                setBit(frame, 46, true);  // UI_enableFullSelfDriving
+                setBit(frame, 47, true);  // UI_hasFullSelfDriving (CH DBC: entitlement check)
                 setSpeedProfileV12V13(frame, speedProfile);
                 framesSent++;
                 driver.send(frame);
@@ -153,6 +179,14 @@ struct HW3Handler : public CarManagerBase
                 frame.data[1] &= ~(0b00111111);
                 frame.data[0] |= (speedOffset & 0x03) << 6;
                 frame.data[1] |= (speedOffset >> 2);
+                // CH DBC mux 2 FSD signals
+                setBit(frame, 5, true);   // UI_enableApproachingEmergencyVehicleDetection
+                setBit(frame, 6, true);   // UI_enableStartFsdFromParkBrakeConfirmation
+                setBit(frame, 7, true);   // UI_enableStartFsdFromPark
+                // bits 27-29: unknown, bit 29 has confirmed functionality on 2026.8.6
+                setBit(frame, 27, true);
+                setBit(frame, 28, true);
+                setBit(frame, 29, true);
                 framesSent++;
                 driver.send(frame);
             }
@@ -265,6 +299,9 @@ struct NagHandler : public CarManagerBase
 
 struct HW4Handler : public CarManagerBase
 {
+    bool prevFSDEnabled = false;
+    int prevSpeedProfile = -1;
+
     const uint32_t *filterIds() const override
     {
 #if defined(ISA_SPEED_CHIME_SUPPRESS)
@@ -329,11 +366,25 @@ struct HW4Handler : public CarManagerBase
                 return;
             auto index = readMuxID(frame);
             if (index == 0)
+            {
                 FSDEnabled = isFSDSelectedInUI(frame);
+#ifndef NATIVE_BUILD
+                if ((bool)FSDEnabled != prevFSDEnabled)
+                {
+                    Serial.printf("[HW4] FSD %s — raw: %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                        (bool)FSDEnabled ? "enabled" : "disabled",
+                        frame.data[0], frame.data[1], frame.data[2], frame.data[3],
+                        frame.data[4], frame.data[5], frame.data[6], frame.data[7]);
+                    prevFSDEnabled = (bool)FSDEnabled;
+                }
+#endif
+            }
             if (index == 0 && FSDEnabled)
             {
-                setBit(frame, 46, true);
-                setBit(frame, 60, true);
+                setBit(frame, 46, true);  // UI_enableFullSelfDriving
+                setBit(frame, 47, true);  // UI_hasFullSelfDriving
+                setBit(frame, 48, true);  // UI_autosteerActivation (VEH DBC)
+                setBit(frame, 60, true);  // FSD V14 flag
 #if defined(EMERGENCY_VEHICLE_DETECTION)
                 if (emergencyVehicleDetectionRuntime)
                     setBit(frame, 59, true);
@@ -354,21 +405,12 @@ struct HW4Handler : public CarManagerBase
                 frame.data[7] |= (speedProfile & 0x07) << 4;
                 framesSent++;
                 driver.send(frame);
-            }
-            if (index == 0 && enablePrint)
-            {
-                char buf[LogRingBuffer::kMaxMsgLen];
-                snprintf(buf, sizeof(buf), "HW4Handler: FSD: %d, Profile: %d",
-                         (bool)FSDEnabled, (int)speedProfile);
-                logRing.push(buf,
 #ifndef NATIVE_BUILD
-                             millis()
-#else
-                             0
-#endif
-                );
-#ifndef NATIVE_BUILD
-                Serial.println(buf);
+                if ((int)speedProfile != prevSpeedProfile)
+                {
+                    Serial.printf("[HW4] Speed profile changed: %d\n", (int)speedProfile);
+                    prevSpeedProfile = (int)speedProfile;
+                }
 #endif
             }
         }
@@ -384,28 +426,85 @@ struct HW4Handler : public CarManagerBase
  *
  * Target frames:
  *   0x3FD (1021) — AP control signals
- *   0x7FF (2047) — Car config
- *   0x3C8  (968) — Country code
- *   0x398  (920) — Alternate car config
+ *   0x7FF (2047) — Car config (multiplexed, mux 1-9)
+ *   0x3C8  (968) — Driver assist map data (multiplexed, mux 0-6)
  *
  * Enable with: #define SNIFFER in sketch_config.h
  */
 struct SnifferHandler : public CarManagerBase
 {
+    // dedup: last seen data per (id, mux) — store up to 16 slots
+    struct SeenFrame { uint32_t id; uint8_t mux; uint8_t data[8]; bool valid; };
+    SeenFrame seen[32] = {};
+
+    bool hasChanged(const CanFrame &frame) {
+        uint8_t mux = frame.data[0];
+        for (auto &s : seen) {
+            if (s.valid && s.id == frame.id && s.mux == mux) {
+                if (memcmp(s.data, frame.data, 8) == 0) return false;
+                memcpy(s.data, frame.data, 8);
+                return true;
+            }
+        }
+        // new slot
+        for (auto &s : seen) {
+            if (!s.valid) {
+                s.id = frame.id; s.mux = mux; s.valid = true;
+                memcpy(s.data, frame.data, 8);
+                return true;
+            }
+        }
+        return true; // slots full, always print
+    }
+
     const uint32_t *filterIds() const override
     {
-        static constexpr uint32_t ids[] = {1021, 2047, 968, 920};
+        static constexpr uint32_t ids[] = {1021};
         return ids;
     }
-    uint8_t filterIdCount() const override { return 4; }
+    uint8_t filterIdCount() const override { return 1; }
 
     void handleMessage(CanFrame &frame, CanDriver &driver) override
     {
 #ifndef NATIVE_BUILD
-        Serial.printf("CAN 0x%03X (%4d) DLC:%d  ", frame.id, frame.id, frame.dlc);
+        if (frame.dlc < 8) return;
+        if (!hasChanged(frame)) return;
+
+        // candump format: (timestamp) can0 ID#DATA
+        Serial.printf("(%.6f) %03X#", millis() / 1000.0, frame.id);
         for (int i = 0; i < frame.dlc; i++)
-            Serial.printf("%02X ", frame.data[i]);
+            Serial.printf("%02X", frame.data[i]);
         Serial.println();
+
+        // then decoded interpretation
+        if (frame.id == 1021) {
+            uint8_t mux = frame.data[0] & 0x07;
+            if (mux == 0) {
+                Serial.printf("  1021[0] fsdStopsControl=%d fsdVisualization=%d hovEnabled=%d homelinkNearby=%d speedOffset=%d\n",
+                    (frame.data[4] >> 6) & 0x01,
+                    (frame.data[4] >> 5) & 0x01,
+                    (frame.data[0] >> 3) & 0x01,
+                    (frame.data[5] >> 5) & 0x01,
+                    (int)((frame.data[3] >> 1) & 0x3F) - 30);
+            } else if (mux == 1) {
+                Serial.printf("  1021[1] applyEceR79=%d hardCoreSummon=%d enableMapStops=%d\n",
+                    (frame.data[2] >> 3) & 0x01,
+                    (frame.data[5] >> 7) & 0x01,
+                    (frame.data[2] >> 4) & 0x01);
+            } else if (mux == 2) {
+                Serial.printf("  1021[2] speedProfile=%d\n",
+                    (frame.data[7] >> 4) & 0x07);
+            } else {
+                Serial.printf("  1021[?] mux=%d\n", mux);
+            }
+        } else if (frame.id == 968) {
+            // data[0] is a mux/counter (0-6) — signal structure per mux unknown
+            Serial.printf("  968 UI_driverAssistMapData mux=%d\n", frame.data[0]);
+        } else if (frame.id == 2047) {
+            // Intel byte order, multiplexed on byte 0
+            uint8_t mux = frame.data[0];
+            Serial.printf("  2047 ID7FFcarConfig mux=%d\n", mux);
+        }
 #endif
     }
 };
