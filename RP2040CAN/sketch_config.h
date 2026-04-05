@@ -37,6 +37,7 @@
 #define PIN_CAN_CS        1   // SPI CS
 #define PIN_CAN_INTERRUPT 10  // MCP2515 INT pin
 #define PIN_LED           8   // onboard blue LED (active LOW)
+#define BOOT_BTN          9   // onboard BOOT button (active LOW)
 
 inline void blinkLED(int times, int ms = 100) {
     for (int i = 0; i < times; i++) {

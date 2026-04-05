@@ -382,8 +382,6 @@ struct HW4Handler : public CarManagerBase
             if (index == 0 && FSDEnabled)
             {
                 setBit(frame, 46, true);  // UI_enableFullSelfDriving
-                setBit(frame, 47, true);  // UI_hasFullSelfDriving
-                setBit(frame, 48, true);  // UI_autosteerActivation (VEH DBC)
                 setBit(frame, 60, true);  // FSD V14 flag
 #if defined(EMERGENCY_VEHICLE_DETECTION)
                 if (emergencyVehicleDetectionRuntime)

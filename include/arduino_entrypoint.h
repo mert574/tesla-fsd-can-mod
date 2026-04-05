@@ -27,6 +27,9 @@
 
 void setup()
 {
+#if defined(BOOT_BTN)
+    pinMode(BOOT_BTN, INPUT_PULLUP);
+#endif
 #if defined(BOARD_SETUP_HOOK)
     BOARD_SETUP_HOOK();
 #endif
